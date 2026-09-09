@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EvolveScaler: Synthesizing Information-Evolution Contexts</title>
+<meta name="description" content="EvolveScaler synthesizes long, multi-turn contexts in which information keeps changing, with deterministically verifiable answers computed by replaying an executable state machine.">
+<link rel="icon" href="assets/logo.png">
+<style>
+:root{
+  --navy:#0C2A57; --navy-2:#123A70; --navy-3:#1B4B8A;
+  --teal:#0E9E97; --teal-2:#14BFAE; --green:#3DB54A;
+  --ink:#0B1626; --body:#33425C; --muted:#6B7C97;
+  --bg:#FFFFFF; --bg-2:#F4F8FC; --bg-3:#EAF1F9;
+  --line:#DCE6F2; --line-2:#C6D5E8;
+  --amber:#E09B21; --plum:#8B55B4; --rose:#DC2648;
+  --shadow:0 1px 2px rgba(12,42,87,.05), 0 8px 28px rgba(12,42,87,.07);
+  --shadow-lg:0 2px 6px rgba(12,42,87,.06), 0 24px 60px rgba(12,42,87,.13);
+  --radius:16px;
+  --sans:'Inter','SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --mono:'SF Mono',ui-monospace,Menlo,Consolas,'Liberation Mono',monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:76px}
+body{
+  margin:0;background:var(--bg);color:var(--body);
+  font-family:var(--sans);font-size:16.5px;line-height:1.72;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4{color:var(--ink);line-height:1.22;margin:0;letter-spacing:-.022em}
+p{margin:0 0 1em}
+a{color:var(--teal);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1140px;margin:0 auto;padding:0 28px}
+.narrow{max-width:820px}
+
+/* ---------- nav ---------- */
+nav{
+  position:sticky;top:0;z-index:100;background:rgba(255,255,255,.82);
+  backdrop-filter:saturate(180%) blur(16px);-webkit-backdrop-filter:saturate(180%) blur(16px);
+  border-bottom:1px solid var(--line);
+}
+.nav-in{max-width:1140px;margin:0 auto;padding:0 28px;height:64px;display:flex;align-items:center;gap:28px}
+.nav-logo{display:flex;align-items:center;gap:9px;font-weight:750;color:var(--ink);font-size:17px;letter-spacing:-.03em;flex-shrink:0}
+.nav-logo img{height:30px;mix-blend-mode:darken}
+.nav-links{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.nav-links a{
+  color:var(--muted);font-size:14.5px;font-weight:560;padding:7px 13px;border-radius:9px;
+  transition:.18s;text-decoration:none;white-space:nowrap;
+}
+.nav-links a:hover{color:var(--navy);background:var(--bg-2);text-decoration:none}
+.nav-links a.on{color:var(--teal);background:rgba(14,158,151,.09)}
+
+/* ---------- hero ---------- */
+/* Base stays pure white and the decorative blobs are kept to the right: the
+   logo has a near-white matte and no alpha, so anything tinted behind it
+   reads as a visible rectangle. */
+.hero{position:relative;overflow:hidden;padding:76px 0 68px;background:#fff;border-bottom:1px solid var(--line)}
+.hero::before,.hero::after{content:'';position:absolute;border-radius:50%;filter:blur(95px);opacity:.4;pointer-events:none}
+.hero::before{width:640px;height:640px;top:-250px;right:-170px;background:radial-gradient(circle,#14BFAE,transparent 68%);animation:drift 22s ease-in-out infinite}
+.hero::after{width:720px;height:720px;bottom:-430px;right:-120px;background:radial-gradient(circle,#3462AC,transparent 68%);animation:drift 26s ease-in-out infinite reverse}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(46px,34px) scale(1.09)}}
+.hero-in{position:relative;z-index:1}
+.hero img.mark{height:96px;margin-bottom:28px;mix-blend-mode:darken}
+.badge{
+  display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line-2);
+  color:var(--navy);font-size:13.5px;font-weight:620;padding:6px 15px;border-radius:999px;margin-bottom:20px;
+  box-shadow:0 1px 3px rgba(12,42,87,.06);
+}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(61,181,74,.18)}
+h1.title{font-size:clamp(34px,5.1vw,55px);font-weight:800;letter-spacing:-.038em;margin-bottom:20px;max-width:16em}
+h1.title .grad{background:linear-gradient(100deg,var(--navy) 4%,var(--teal) 52%,var(--green) 96%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.lede{font-size:19.5px;line-height:1.66;color:var(--body);max-width:41em;margin-bottom:30px}
+.cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:46px}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;padding:12px 24px;border-radius:11px;
+  font-size:15.5px;font-weight:640;transition:.2s;border:1px solid transparent;cursor:pointer;text-decoration:none;
+}
+.btn-pri{background:linear-gradient(100deg,var(--navy) 0%,var(--teal) 118%);color:#fff;box-shadow:0 4px 16px rgba(12,42,87,.24)}
+.btn-pri:hover{transform:translateY(-2px);box-shadow:0 9px 26px rgba(12,42,87,.3);text-decoration:none;color:#fff}
+.btn-sec{background:#fff;color:var(--navy);border-color:var(--line-2)}
+.btn-sec:hover{border-color:var(--teal);color:var(--teal);transform:translateY(-2px);text-decoration:none}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:14px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:19px 20px;box-shadow:var(--shadow);transition:.22s}
+.stat:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:var(--line-2)}
+.stat .n{font-size:31px;font-weight:790;color:var(--navy);letter-spacing:-.035em;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .n .u{font-size:19px;color:var(--teal)}
+.stat .k{font-size:12.6px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-top:5px}
+
+/* ---------- sections ---------- */
+section{padding:82px 0;border-bottom:1px solid var(--line)}
+section.alt{background:var(--bg-2)}
+.eyebrow{
+  display:inline-block;font-size:12.8px;font-weight:730;text-transform:uppercase;letter-spacing:.13em;
+  color:var(--teal);margin-bottom:13px;
+}
+h2.sec{font-size:clamp(27px,3.5vw,37px);font-weight:780;letter-spacing:-.032em;margin-bottom:16px}
+.sec-lede{font-size:18px;color:var(--body);max-width:46em;margin-bottom:40px}
+
+/* ---------- generic cards ---------- */
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);transition:.22s}
+.card:hover{border-color:var(--line-2);box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+.card h3{font-size:18.5px;font-weight:700;margin-bottom:9px}
+.card p{font-size:15.4px;color:var(--body);margin:0}
+.icon{
+  width:42px;height:42px;border-radius:11px;display:grid;place-items:center;margin-bottom:15px;
+  background:linear-gradient(135deg,rgba(12,42,87,.09),rgba(20,191,174,.16));font-size:20px;
+}
+
+/* ---------- problem strip ---------- */
+.vs{display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:stretch;margin-top:8px}
+.vs .pane{border-radius:var(--radius);padding:26px;border:1px solid var(--line);background:#fff}
+.vs .pane.bad{border-color:#F2CDD5;background:linear-gradient(180deg,#FEF6F7,#fff)}
+.vs .pane.good{border-color:#BFE7DF;background:linear-gradient(180deg,#F1FBF8,#fff)}
+.vs .tag{font-size:12.4px;font-weight:730;letter-spacing:.1em;text-transform:uppercase;margin-bottom:11px}
+.vs .bad .tag{color:var(--rose)}
+.vs .good .tag{color:var(--teal)}
+.vs .arrow{display:grid;place-items:center;color:var(--line-2);font-size:26px}
+.vs ul{margin:12px 0 0;padding-left:19px;font-size:15.2px}
+.vs li{margin-bottom:7px}
+@media(max-width:820px){.vs{grid-template-columns:1fr}.vs .arrow{transform:rotate(90deg)}}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+.tab{
+  padding:9px 18px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;
+  font-family:inherit;font-size:14.6px;font-weight:620;color:var(--muted);transition:.18s;
+}
+.tab:hover{border-color:var(--teal);color:var(--teal)}
+.tab.on{background:linear-gradient(100deg,var(--navy),var(--navy-3));color:#fff;border-color:transparent;box-shadow:0 3px 12px rgba(12,42,87,.22)}
+.panel{display:none;animation:fade .32s ease}
+.panel.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+/* ---------- pipeline ---------- */
+.pipe{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
+.step{
+  background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;cursor:pointer;
+  transition:.22s;position:relative;text-align:left;font-family:inherit;
+}
+.step:hover{border-color:var(--teal);transform:translateY(-3px)}
+.step.on{border-color:transparent;background:linear-gradient(135deg,var(--navy),var(--navy-3));box-shadow:0 10px 30px rgba(12,42,87,.26)}
+.step.on .s-n,.step.on h4{color:#fff}
+.step.on .s-d{color:rgba(255,255,255,.8)}
+.s-n{font-size:12.4px;font-weight:760;letter-spacing:.12em;color:var(--teal);margin-bottom:9px}
+.step h4{font-size:17.5px;font-weight:720;margin-bottom:7px}
+.s-d{font-size:14.6px;color:var(--muted);line-height:1.6}
+.pipe-detail{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:30px;box-shadow:var(--shadow)}
+@media(max-width:820px){.pipe{grid-template-columns:1fr}}
+
+/* ---------- primitives explorer ---------- */
+.prim-wrap{display:grid;grid-template-columns:300px 1fr;gap:20px}
+.prim-list{display:flex;flex-direction:column;gap:6px}
+.prim{
+  text-align:left;padding:11px 15px;border-radius:10px;border:1px solid transparent;background:transparent;
+  cursor:pointer;font-family:inherit;font-size:15px;font-weight:600;color:var(--body);transition:.16s;
+  display:flex;align-items:center;gap:11px;
+}
+.prim:hover{background:var(--bg-3)}
+.prim.on{background:#fff;border-color:var(--teal);color:var(--navy);box-shadow:var(--shadow)}
+.prim .pn{
+  width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex-shrink:0;
+  background:var(--bg-3);font-size:11.5px;font-weight:750;color:var(--muted);
+}
+.prim.on .pn{background:linear-gradient(135deg,var(--navy),var(--teal));color:#fff}
+.prim-detail{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:30px;box-shadow:var(--shadow);min-height:270px}
+.prim-detail h3{font-size:22px;margin-bottom:6px}
+.prim-detail .spec{color:var(--teal);font-weight:640;font-size:15px;margin-bottom:18px}
+.prim-detail .ex-l{font-size:12.4px;font-weight:730;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.prim-detail .ex{background:var(--bg-2);border-left:3px solid var(--teal);border-radius:0 10px 10px 0;padding:15px 18px;font-size:15px;color:var(--body)}
+@media(max-width:860px){.prim-wrap{grid-template-columns:1fr}}
+
+/* ---------- replay widget ---------- */
+.replay{display:grid;grid-template-columns:1fr 300px;gap:20px}
+.log{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
+.sys{background:var(--bg-3);border-radius:11px;padding:14px 17px;font-size:14.4px;color:var(--body);margin-bottom:18px;border-left:3px solid var(--navy)}
+.turn{margin-bottom:16px;opacity:.28;transition:opacity .4s}
+.turn.shown{opacity:1}
+.turn-h{font-size:12.6px;font-weight:740;letter-spacing:.09em;text-transform:uppercase;color:var(--navy);margin-bottom:9px}
+.rec{
+  display:flex;gap:11px;align-items:flex-start;padding:9px 13px;border-radius:9px;margin-bottom:6px;
+  font-size:14.4px;background:var(--bg-2);border:1px solid transparent;transition:.3s;
+}
+.rec.invalid{background:#FEF4F6;border-color:#F3D2D9;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(220,38,72,.45)}
+.rec .id{font-family:var(--mono);font-size:12.4px;font-weight:640;color:var(--teal);flex-shrink:0;padding-top:1px}
+.rec.invalid .id{color:var(--rose)}
+.rec .flag{
+  margin-left:auto;font-size:11px;font-weight:730;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--rose);background:#fff;border:1px solid #F3D2D9;border-radius:6px;padding:1px 7px;flex-shrink:0;
+  text-decoration:none;
+}
+.state{background:linear-gradient(165deg,var(--navy),#0A1F44);border-radius:var(--radius);padding:24px;color:#fff;position:sticky;top:82px;height:fit-content}
+.state h4{color:#fff;font-size:13px;font-weight:730;letter-spacing:.11em;text-transform:uppercase;margin-bottom:5px}
+.state .hint{font-size:13.2px;color:rgba(255,255,255,.55);margin-bottom:19px;line-height:1.55}
+.var{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.12)}
+.var:last-of-type{border-bottom:none}
+.var .vk{font-size:14.2px;color:rgba(255,255,255,.78)}
+.var .vv{font-size:21px;font-weight:760;font-variant-numeric:tabular-nums;transition:.3s}
+.var .vv.up{color:var(--teal-2)}.var .vv.down{color:#FF8FA3}.var .vv.same{color:#fff}
+.ctrl{display:flex;gap:9px;margin-top:20px}
+.ctrl button{
+  flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.1);
+  color:#fff;font-family:inherit;font-size:14px;font-weight:640;cursor:pointer;transition:.18s;
+}
+.ctrl button:hover:not(:disabled){background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.4)}
+.ctrl button:disabled{opacity:.34;cursor:not-allowed}
+.ctrl button.go{background:linear-gradient(100deg,var(--teal),var(--green));border-color:transparent}
+.answer{margin-top:18px;padding:15px 18px;border-radius:11px;background:rgba(20,191,174,.14);border:1px solid rgba(20,191,174,.34);font-size:14.2px;color:#fff;display:none}
+.answer.on{display:block;animation:fade .4s}
+.answer b{color:var(--teal-2)}
+@media(max-width:880px){.replay{grid-template-columns:1fr}.state{position:static}}
+.log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;gap:10px}
+.log-tag{font-size:11.6px;font-weight:730;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.log-count{font-size:12.4px;color:var(--teal);font-weight:640;font-variant-numeric:tabular-nums}
+.stat-tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--teal);background:rgba(14,158,151,.1);border-radius:5px;padding:1px 6px;margin-right:7px}
+.rec.invalid .stat-tag{color:var(--rose);background:rgba(220,38,72,.09)}
+.rec.lit{background:#fff;border-color:var(--teal);box-shadow:0 2px 10px rgba(14,158,151,.16)}
+.qa-line{font-size:14px;color:var(--muted);margin-top:9px;padding-left:3px}
+.qa-line b{color:var(--teal)}
+.crew-h{font-size:11.4px;font-weight:730;letter-spacing:.09em;text-transform:uppercase;
+  color:rgba(255,255,255,.5);margin:19px 0 9px;padding-top:15px;border-top:1px solid rgba(255,255,255,.14)}
+.crew{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;color:rgba(255,255,255,.82)}
+.crew .cv{color:var(--teal-2);font-variant-numeric:tabular-nums;text-align:right;font-size:12.4px}
+.qbox{margin-top:20px;background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:28px;box-shadow:var(--shadow);opacity:.5;transition:opacity .45s}
+.qbox.ready{opacity:1}
+.qbox-h h3{font-size:20px;font-weight:740;margin-bottom:5px}
+.qbox-h p{font-size:14.8px;color:var(--muted);margin-bottom:19px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.chip{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;cursor:pointer;
+  font-family:inherit;font-size:13.6px;font-weight:620;color:var(--muted);transition:.16s}
+.chip:hover{border-color:var(--c);color:var(--c)}
+.chip.on{background:var(--c);border-color:var(--c);color:#fff}
+.qa{border-left:3px solid var(--line-2);padding-left:18px}
+.q-lab{display:inline-block;font-size:10.6px;font-weight:740;letter-spacing:.08em;text-transform:uppercase;
+  color:#fff;border-radius:5px;padding:2px 8px;margin-right:9px;vertical-align:2px}
+.q-q{font-size:16px;color:var(--ink);margin-bottom:12px}
+.q-a{font-size:15.6px;color:var(--body);margin-bottom:12px}
+.q-r{font-size:13.4px;color:var(--muted)}
+.q-r code{font-family:var(--mono);font-size:12.2px;background:var(--bg-3);border-radius:4px;padding:1px 5px;margin-right:3px}
+
+/* ---------- charts ---------- */
+.bars{display:flex;flex-direction:column;gap:11px}
+.bar-row{display:grid;grid-template-columns:190px 1fr 56px;gap:14px;align-items:center;font-size:14.8px}
+.bar-row .bl{color:var(--body);font-weight:560;text-align:right}
+.bar-track{height:24px;background:var(--bg-3);border-radius:7px;overflow:hidden}
+.bar-fill{height:100%;border-radius:7px;transform-origin:left center;animation:grow .95s cubic-bezier(.22,1,.36,1) both}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.bar-row .bv{font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;font-size:14.2px}
+@media(max-width:700px){.bar-row{grid-template-columns:120px 1fr 48px;font-size:13.4px}}
+
+/* ---------- tables ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:#fff;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:14.6px;font-variant-numeric:tabular-nums}
+th,td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left;font-weight:600;color:var(--ink)}
+thead th{background:var(--bg-2);font-size:12.6px;font-weight:720;letter-spacing:.055em;text-transform:uppercase;color:var(--muted);position:sticky;top:0}
+tbody tr{transition:.14s}
+tbody tr:hover{background:var(--bg-2)}
+tbody tr:last-child td{border-bottom:none}
+td.best{color:var(--teal);font-weight:750}
+.metric-head{min-width:190px}
+thead .metric-role{
+  display:block;margin-top:2px;font-size:9.5px;font-weight:600;letter-spacing:.01em;
+  text-transform:none;color:var(--muted)
+}
+.score-cell{position:relative;min-width:190px;isolation:isolate}
+.score-track{
+  position:absolute;z-index:0;left:12px;right:12px;top:50%;height:23px;
+  transform:translateY(-50%);overflow:hidden;border-radius:6px
+}
+.score-fill{height:100%;border-radius:6px;transition:width .35s ease}
+.score-avg .score-track{background:rgba(14,158,151,.08)}
+.score-avg .score-fill{background:linear-gradient(90deg,var(--teal),var(--green));opacity:.42}
+.score-pass .score-track{background:rgba(12,42,87,.06)}
+.score-pass .score-fill{background:var(--navy-3);opacity:.22}
+.score-value{position:relative;z-index:1;display:block;font-weight:720;color:var(--navy)}
+.score-pass .score-value{font-weight:620;color:var(--body)}
+.score-cell.best .score-value{color:var(--teal);font-weight:800}
+.gap-cell{color:var(--muted);font-size:13.4px}
+
+/* ---------- families ---------- */
+.fam{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.22s}
+.fam:hover{border-color:var(--teal);transform:translateY(-3px);box-shadow:var(--shadow-lg)}
+.fam-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px}
+.fam h4{font-size:16.5px;font-weight:710}
+.share{font-size:12.6px;font-weight:730;color:#fff;padding:3px 10px;border-radius:999px;flex-shrink:0}
+.fam .q{font-size:14.6px;color:var(--body);font-style:italic;line-height:1.6;margin-top:9px;padding-top:12px;border-top:1px dashed var(--line-2)}
+
+/* ---------- callout ---------- */
+.callout{background:linear-gradient(135deg,var(--navy),#0A1F44);border-radius:20px;padding:44px;color:#fff;text-align:center;position:relative;overflow:hidden}
+.callout::after{content:'';position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(20,191,174,.28),transparent 68%);top:-260px;right:-150px}
+.callout>*{position:relative;z-index:1}
+.callout h3{color:#fff;font-size:26px;font-weight:760;margin-bottom:12px}
+.callout p{color:rgba(255,255,255,.8);font-size:17px;max-width:40em;margin:0 auto}
+
+/* ---------- footer ---------- */
+footer{padding:56px 0 44px;background:var(--bg-2)}
+.f-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:34px;margin-bottom:34px}
+footer h5{font-size:12.6px;font-weight:730;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 13px}
+footer img{height:34px;margin-bottom:13px;mix-blend-mode:darken}
+footer p{font-size:14.6px;color:var(--muted);margin:0 0 7px}
+.f-auth{font-size:14.4px;color:var(--body);line-height:1.85}
+.f-bot{border-top:1px solid var(--line-2);padding-top:22px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13.8px;color:var(--muted)}
+@media(max-width:820px){.f-grid{grid-template-columns:1fr}}
+
+.js .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.22,1,.36,1),transform .7s cubic-bezier(.22,1,.36,1)}
+.js .reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.js .reveal{opacity:1;transform:none}.bar-fill{animation:none}.hero::before,.hero::after{animation:none}}
+.note{font-size:13.8px;color:var(--muted);margin-top:16px;font-style:italic}
+
+/* ---------- vertical research landing page ---------- */
+body{background:#F3F7FB}
+nav,#problem,#approach,#anatomy,#data,#paper,footer{display:none}
+.landing-shell{
+  width:min(100%,1600px);margin:0 auto;display:block;background:#fff;
+  box-shadow:0 0 0 1px var(--line),0 28px 90px rgba(12,42,87,.10)
+}
+.landing-shell .hero{
+  position:relative;min-height:auto;padding:clamp(44px,6vw,88px) clamp(24px,5vw,76px);
+  border:0;border-bottom:1px solid var(--line);background:#fff;overflow:hidden
+}
+.landing-shell .hero::before{width:620px;height:620px;top:-390px;right:-250px;opacity:.24}
+.landing-shell .hero::after{width:620px;height:620px;bottom:-430px;left:-310px;opacity:.14}
+.paper-hero-in{position:relative;z-index:1;max-width:1280px;margin:0 auto;text-align:center}
+.logo-strip{
+  display:flex;align-items:center;justify-content:center;gap:clamp(26px,5vw,76px);
+  margin:0 auto 34px
+}
+.logo-strip img{display:block;max-width:100%;object-fit:contain}
+.logo-strip .ruc-logo{width:clamp(230px,24vw,340px);max-height:70px}
+.logo-strip .project-logo{
+  width:clamp(300px,31vw,440px);height:104px;object-fit:cover;object-position:center;
+  mix-blend-mode:darken
+}
+.logo-strip .hunyuan-logo{width:clamp(220px,21vw,300px);max-height:82px}
+.paper-kicker{
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:6px 14px;
+  border:1px solid var(--line-2);border-radius:999px;background:rgba(255,255,255,.82);
+  color:var(--teal);font-size:12px;font-weight:760;letter-spacing:.12em;text-transform:uppercase
+}
+.paper-title{
+  max-width:1120px;margin:0 auto 22px;color:var(--ink);
+  font-size:clamp(24px,2.6vw,38px);font-weight:820;line-height:1.22;letter-spacing:-.03em
+}
+.paper-title .paper-brand{
+  background:linear-gradient(100deg,var(--navy),var(--teal) 72%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent
+}
+.paper-authors{
+  max-width:1120px;margin:0 auto 12px;color:var(--navy);
+  font-size:clamp(15px,1.55vw,19px);font-weight:650;line-height:1.8
+}
+.paper-authors span{white-space:nowrap}
+.paper-affiliations{
+  display:flex;justify-content:center;gap:8px 24px;flex-wrap:wrap;
+  max-width:1160px;margin:0 auto;color:var(--body);font-size:13.5px;line-height:1.55
+}
+.paper-notes{margin:8px 0 0;color:var(--muted);font-size:12.5px}
+.abstract-card{
+  max-width:1120px;margin:34px auto 0;padding:27px 30px;text-align:left;
+  border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:0 15px 15px 0;
+  background:rgba(247,251,253,.9);box-shadow:var(--shadow)
+}
+.abstract-label{
+  display:block;margin-bottom:8px;color:var(--teal);font-size:11.5px;
+  font-weight:780;letter-spacing:.13em;text-transform:uppercase
+}
+.abstract-card p{margin:0;color:var(--body);font-size:14.5px;line-height:1.68}
+
+/* ---------- the two headline figures under the abstract ---------- */
+.hero-figs{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;
+  max-width:1120px;margin:22px auto 0;text-align:left
+}
+.hero-fig{
+  display:flex;flex-direction:column;margin:0;padding:16px 16px 14px;
+  border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow);
+  transition:.22s
+}
+.hero-fig:hover{border-color:var(--line-2);box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+.hero-fig a{display:block}
+.hero-fig img{display:block;width:100%;height:auto;border-radius:7px}
+.hero-fig figcaption{
+  margin-top:11px;color:var(--muted);font-size:12.8px;line-height:1.56
+}
+.hero-fig figcaption b{color:var(--navy);font-weight:700}
+
+#replay{
+  min-width:0;max-width:1600px;margin:0 auto;padding:clamp(50px,6vw,88px) clamp(24px,5vw,76px);
+  border:0;background:linear-gradient(145deg,#F8FBFD 0%,#EEF5FA 100%)
+}
+#replay .wrap{max-width:1280px;margin:0 auto;padding:0}
+#replay h2.sec{font-size:clamp(29px,3vw,43px);max-width:15em}
+#replay .sec-lede{font-size:16.5px;max-width:54em;margin-bottom:26px}
+#replay .replay{grid-template-columns:minmax(0,1fr) 260px;gap:16px}
+#replay .log{padding:19px}
+#replay .state{top:24px;padding:20px}
+#replay .qbox{padding:22px;margin-top:16px}
+#replay .rec{font-size:13.4px;padding:8px 10px}
+#replay .sys{font-size:13.5px}
+
+#results{
+  display:block;max-width:1600px;margin:0 auto;padding:82px 28px;
+  background:#fff;border-top:1px solid var(--line)
+}
+#results .wrap{max-width:1280px;padding:0}
+#results .tbl-wrap table{min-width:840px}
+
+@media(max-width:900px){
+  .logo-strip{display:grid;grid-template-columns:1fr 1fr;gap:16px 22px;margin-bottom:28px}
+  .logo-strip .project-logo{grid-column:1/-1;grid-row:1;width:min(100%,360px);height:86px;justify-self:center}
+  .logo-strip .ruc-logo{grid-column:1;grid-row:2;width:100%;max-height:54px}
+  .logo-strip .hunyuan-logo{grid-column:2;grid-row:2;width:100%;max-height:62px}
+}
+@media(max-width:680px){
+  .landing-shell .hero,#replay,#results{padding:38px 20px}
+  .paper-affiliations{display:block}
+  .paper-affiliations span{display:block;margin-bottom:5px}
+  .abstract-card{padding:22px 20px}
+  .abstract-card p{font-size:14px}
+}
+@media(max-width:820px){
+  .hero-figs{grid-template-columns:minmax(0,1fr)}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.className='js';</script>
+
+<!-- ================= HERO ================= -->
+<main class="landing-shell">
+<header class="hero" id="top">
+  <div class="paper-hero-in">
+    <div class="logo-strip" aria-label="EvolveScaler and institutional logos">
+      <img class="ruc-logo" src="assets/cn_ruc_logo.png" alt="Renmin University of China">
+      <img class="project-logo" src="assets/logo.png" alt="EvolveScaler">
+      <img class="hunyuan-logo" src="assets/hunyuanlogo.png" alt="Tencent Hunyuan">
+    </div>
+
+    <span class="paper-kicker">Research paper</span>
+    <h1 class="paper-title">
+      <span class="paper-brand">EvolveScaler</span>: Synthesizing Information-Evolution Contexts via Executable
+      State Machines and Natural Language Rendering
+    </h1>
+
+    <p class="paper-authors">
+      <span>Ziliang Zhao<sup>1,2,*</sup></span>,
+      <span>Zenan Xu<sup>2,*</sup></span>,
+      <span>Shuting Wang<sup>1</sup></span>,
+      <span>Zhao Wang<sup>1,2</sup></span>,
+      <span>Bowen Cao<sup>1,3</sup></span>,
+      <span>Minda Hu<sup>1,3</sup></span>,
+      <span>Lincheng Li<sup>2</sup></span>,
+      <span>Pluto Zhou<sup>2,†</sup></span>,
+      <span>Zhicheng Dou<sup>1,†</sup></span>
+    </p>
+
+    <div class="paper-affiliations">
+      <span><sup>1</sup> Gaoling School of Artificial Intelligence, Renmin University of China</span>
+      <span><sup>2</sup> LLM Department, Hunyuan Team, Tencent</span>
+      <span><sup>3</sup> The Chinese University of Hong Kong</span>
+    </div>
+    <p class="paper-notes"><sup>*</sup> Equal contribution &nbsp;·&nbsp; <sup>†</sup> Corresponding author</p>
+
+    <div class="abstract-card">
+      <span class="abstract-label">Abstract</span>
+      <p>
+        In persistent interactions, a long context can encode an evolving process rather than a fixed record of
+        facts. Later events can revise or revoke earlier records, changing which information remains valid and what
+        conclusions follow. We refer to this setting as <em>information evolution</em> (IE). Solving an IE task
+        requires identifying valid records, applying updates in order, and reconstructing the query-relevant state
+        from the event history. Constructing reliable IE data is difficult because conventional pipelines generate
+        long-form text before deriving supervision, leaving state transitions implicit and answers difficult to
+        verify. To address this problem, we introduce <b>EvolveScaler</b>, a code-driven framework that defines
+        information evolution in code before rendering it as natural language. Human-authored operational
+        specifications define how events alter state and which records remain valid. They also specify difficulty
+        controls and executable answer logic. A strong LLM synthesizes a self-contained simulator from each
+        specification. Executing a validated simulator produces natural-language, multi-turn event histories, while
+        deterministic replay computes reference answers and atomic checklists. The LLM proposes the executable
+        mechanism, while the replayed program state determines the supervision. We instantiate EvolveScaler with 117
+        task prototypes and 159 final-question operators. Five controlled difficulty levels jointly increase
+        trajectory scale and evolution complexity, spanning approximately 7 to 1,200 events per instance. The
+        resulting resource contains approximately 35,100 training examples and 585 validated evaluation instances.
+        Using the evaluation instances, we benchmark frontier and open models across the five difficulty levels. On
+        the <code>very_long</code> tier, the strongest model achieves an avg@5 of 59.3%, while six models have avg@5
+        scores below 10%. To test the training value of the generated data, we train an internal A3B model on
+        6,000 EvolveScaler examples. The trained model outperforms its base checkpoint on all eight independently
+        constructed out-of-distribution benchmarks, with an average gain of 5.25 points. These results show that
+        code-driven IE synthesis supports both diagnostic evaluation and transferable training supervision.
+      </p>
+    </div>
+
+    <div class="hero-figs">
+      <figure class="hero-fig">
+        <a href="assets/ie-examples.png" target="_blank" rel="noopener" title="Open full size">
+          <img src="assets/ie-examples.png"
+               alt="Four information-evolution scenarios: group dinner planning, a household expense ledger, soccer match play-by-play, and online-shopping returns">
+        </a>
+        <figcaption>
+          <b>Information evolution in four registers.</b> Creations, updates, invalidations, and
+          state-preserving noise are interleaved, so no single line carries the answer &mdash; it exists
+          only in the state you get by replaying the history.
+        </figcaption>
+      </figure>
+      <figure class="hero-fig">
+        <a href="assets/information-evolution.png" target="_blank" rel="noopener" title="Open full size">
+          <img src="assets/information-evolution.png"
+               alt="The EvolveScaler framework: a world spec becomes an executable state machine, rendered to a natural-language log, with answers from deterministic replay">
+        </a>
+        <figcaption>
+          <b>The EvolveScaler framework.</b> A world spec becomes an executable state machine whose
+          events keep rewriting a hidden state; the trace is rendered as a long multi-turn log, and
+          replaying the same machine yields the code-verified answer.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</header>
+
+<!-- ================= PROBLEM ================= -->
+<section id="problem">
+  <div class="wrap">
+    <div class="narrow">
+      <span class="eyebrow">The gap</span>
+      <h2 class="sec">Length is not the hard part. Keeping up is.</h2>
+      <p class="sec-lede">
+        When a model works with someone over days, the information it relies on keeps moving. A number is corrected.
+        A booking is cancelled. A screenshot turns out to be stale. We call this <b>Information Evolution</b>&nbsp;(IE):
+        the context is not a description of a fixed world, but a sequence of updates that can introduce, modify, or
+        revoke what came before &mdash; and quietly invalidate every conclusion downstream.
+      </p>
+    </div>
+
+    <div class="vs reveal">
+      <div class="pane bad">
+        <div class="tag">◇ Generate, then annotate</div>
+        <h3>The usual pipeline</h3>
+        <p style="font-size:15.2px;margin-top:9px">A model writes a long dialogue; humans or another model then read it back and try to infer the label.</p>
+        <ul>
+          <li>Consistency decays as the context grows.</li>
+          <li>The "gold" answer is itself a model's opinion.</li>
+          <li>Difficulty can be described, but not dialled.</li>
+          <li>Nothing guarantees the question is even answerable.</li>
+        </ul>
+      </div>
+      <div class="arrow">→</div>
+      <div class="pane good">
+        <div class="tag">◆ Specify, then render</div>
+        <h3>The EvolveScaler pipeline</h3>
+        <p style="font-size:15.2px;margin-top:9px">Information evolution is defined in code first; natural language is what the program prints.</p>
+        <ul>
+          <li>The state machine cannot contradict itself.</li>
+          <li>The answer is computed by replay, not judged.</li>
+          <li>Every difficulty knob is a parameter.</li>
+          <li>Answerability is checked before the sample ships.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid g3 reveal" style="margin-top:22px">
+      <div class="card">
+        <div class="icon">⟳</div>
+        <h3>State, not text</h3>
+        <p>Difficulty is reframed as <b>state maintenance</b>. What makes a trace hard is the number of order-dependent updates a reader must survive &mdash; not its word count.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⌦</div>
+        <h3>Nothing is given away</h3>
+        <p>Events expose only local deltas &mdash; "stock +2" &mdash; never the running total. No single sentence contains the answer, so the trace has to be reconstructed.</p>
+      </div>
+      <div class="card">
+        <div class="icon">✓</div>
+        <h3>Verifiable by construction</h3>
+        <p>Each sample ships with a code-derived reference answer and a checklist of atomic claims that can be checked one at a time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= APPROACH ================= -->
+<section class="alt" id="approach">
+  <div class="wrap">
+    <span class="eyebrow">How it works</span>
+    <h2 class="sec">Three stages, one contract</h2>
+    <p class="sec-lede">
+      People decide what the world is. A language model writes the program that runs it. The program &mdash; not the
+      model &mdash; decides what the answer is. Click a stage to see what it guarantees.
+    </p>
+
+    <div class="pipe">
+      <button class="step on" data-step="0">
+        <div class="s-n">STAGE 01</div>
+        <h4>Specify</h4>
+        <div class="s-d">Annotators turn a real workflow into a typed transition specification.</div>
+      </button>
+      <button class="step" data-step="1">
+        <div class="s-n">STAGE 02</div>
+        <h4>Synthesize</h4>
+        <div class="s-d">An LLM compiles that specification into a self-contained simulator.</div>
+      </button>
+      <button class="step" data-step="2">
+        <div class="s-n">STAGE 03</div>
+        <h4>Execute &amp; replay</h4>
+        <div class="s-d">Running it emits the dialogue; replaying it emits the answer.</div>
+      </button>
+    </div>
+    <div class="pipe-detail" id="pipeDetail"></div>
+  </div>
+</section>
+
+<!-- ================= ANATOMY ================= -->
+<section id="anatomy">
+  <div class="wrap">
+    <span class="eyebrow">Anatomy of a prototype</span>
+    <h2 class="sec">Ten primitives make a world</h2>
+    <p class="sec-lede">
+      Every one of the 117 prototypes is described by the same ten primitives. Because they are declared rather
+      than narrated, each one becomes a dial. Pick a primitive to see what it fixes, illustrated on a
+      shared-expense chat for a group trip.
+    </p>
+    <div class="prim-wrap">
+      <div class="prim-list" id="primList"></div>
+      <div class="prim-detail" id="primDetail"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= REPLAY ================= -->
+<section class="alt" id="replay">
+  <div class="wrap">
+    <span class="eyebrow">Live information evolution</span>
+    <h2 class="sec">Language on the surface. Executable state underneath.</h2>
+    <p class="sec-lede">
+      Step through a warehouse log. The left side is the natural-language context shown to a model; the right side
+      is the hidden ledger maintained by code. Invalid records never touch the state. Finish the replay, then query
+      the same trace through seven different reasoning operators.
+    </p>
+
+    <div class="replay">
+      <div class="log">
+        <div class="log-head">
+          <span class="log-tag">Rendered context &mdash; what the model reads</span>
+          <span class="log-count" id="logCount"></span>
+        </div>
+        <div class="sys">
+          <b>System.</b> Track a warehouse shift board across receiving, put-away, picking and replenishment.
+          Only <b>WMS-posted</b>, <b>floor-re-checked</b>, <b>supervisor-confirmed</b> and
+          <b>stock-control-confirmed</b> records count. Drill tasks, retracted scans, old count drafts and test
+          waves do <b>not</b>. Running totals are never stated.
+        </div>
+        <div id="turns"></div>
+      </div>
+
+      <div class="state">
+        <h4>Hidden ledger</h4>
+        <div class="hint">Maintained by replaying the state machine. Never appears in the context.</div>
+        <div id="vars"></div>
+        <div class="crew-h">Per crew &middot; valid records only</div>
+        <div id="crews"></div>
+        <div class="ctrl">
+          <button id="bPrev" disabled>&larr; Back</button>
+          <button id="bNext" class="go">Start &rarr;</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="qbox" id="qbox">
+      <div class="qbox-h">
+        <h3>Now ask the same trace anything</h3>
+        <p>Seven operator families, one unchanged log. Each answer is computed by replay, never judged by a model.</p>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="qa" id="qa"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ================= DATA ================= -->
+<section id="data">
+  <div class="wrap">
+    <span class="eyebrow">The corpus</span>
+    <h2 class="sec">Broad on the surface, deep underneath</h2>
+    <p class="sec-lede">
+      117 prototypes across 12 themes, sampled at five length tiers, produce roughly 35,100 training and 585 held-out
+      test examples spanning two orders of magnitude in context length.
+    </p>
+
+    <div class="tabs" id="dataTabs">
+      <button class="tab on" data-p="themes">Themes</button>
+      <button class="tab" data-p="scale">Context scale</button>
+      <button class="tab" data-p="ops">Question operators</button>
+    </div>
+
+    <div class="panel on" data-panel="themes">
+      <div class="card" style="padding:30px">
+        <h3 style="margin-bottom:5px">Where information actually accumulates</h3>
+        <p style="color:var(--muted);font-size:15.2px;margin-bottom:22px">
+          Themes were chosen for process density &mdash; settings where records pile up, get revised and occasionally
+          get thrown out. Share of the 117 prototypes.
+        </p>
+        <div class="bars" id="barsThemes"></div>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="scale">
+      <div class="card" style="padding:30px">
+        <h3 style="margin-bottom:5px">One prototype, five difficulties</h3>
+        <p style="color:var(--muted);font-size:15.2px;margin-bottom:22px">
+          The same world is re-run with more blocks, denser events, more invalid records and deeper counterfactuals.
+          Average state-changing events per sample, by tier.
+        </p>
+        <div class="bars" id="barsScale"></div>
+        <p class="note">From ~7 events in the shortest tier to ~1,200 in the longest &mdash; a two-order-of-magnitude sweep with the task held fixed.</p>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="ops">
+      <p style="color:var(--muted);font-size:15.4px;margin:-10px 0 22px;max-width:46em">
+        The final question is a controlled probe of the reconstructed state. 159 operators fall into seven families;
+        each forces a different access pattern over the very same trace.
+      </p>
+      <div class="grid g3" id="famGrid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section class="alt" id="results">
+  <div class="wrap">
+    <span class="eyebrow">Evaluation</span>
+    <h2 class="sec">Frontier models fall off a cliff</h2>
+    <p class="sec-lede">
+      14 systems, five tiers, five responses per instance. <b>avg@5 is our primary metric</b> for response-level
+      reliability; <b>pass@5 is auxiliary</b> and asks whether any of five attempts succeeds. Choose a tier to re-rank.
+    </p>
+
+    <div class="tabs" id="tierTabs">
+      <button class="tab" data-t="0">Very short</button>
+      <button class="tab" data-t="1">Short</button>
+      <button class="tab" data-t="2">Medium</button>
+      <button class="tab" data-t="3">Long</button>
+      <button class="tab on" data-t="4">Very long</button>
+      <button class="tab" data-t="5">Overall</button>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>System</th>
+          <th class="metric-head">avg@5<span class="metric-role">Primary · response reliability</span></th>
+          <th class="metric-head">pass@5<span class="metric-role">Auxiliary · best of five</span></th>
+          <th>Gap<span class="metric-role">pass@5 − avg@5</span></th>
+        </tr></thead>
+        <tbody id="evalBody"></tbody>
+      </table>
+    </div>
+    <p class="note" id="tierNote"></p>
+
+    <div class="grid g2" style="margin-top:40px">
+      <div class="card">
+        <h3 style="margin-bottom:14px">Difficulty tracks state, not tokens</h3>
+        <div class="bars" id="barsMedian"></div>
+        <p style="font-size:14.8px;color:var(--muted);margin-top:16px">
+          Median avg@5 across all 14 systems. Separation widens with length: the spread is 59.0&ndash;81.7 on the
+          shortest tier and 4.8&ndash;59.3 on the longest &mdash; the benchmark stops being a formality and starts
+          being a measurement.
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:14px">Training on it transfers</h3>
+        <div class="bars" id="barsTrain"></div>
+        <p style="font-size:14.8px;color:var(--muted);margin-top:16px">
+          Average over eight held-out benchmarks that share no data with EvolveScaler. Continued training lifts
+          <b>all eight</b>, for <b>+5.25</b> points at 6,000 examples &mdash; state tracking transfers, rather than a
+          benchmark-specific answer format.
+        </p>
+      </div>
+    </div>
+
+    <div class="card reveal" style="margin-top:18px">
+      <h3 style="margin-bottom:6px">Where the answers go wrong</h3>
+      <p style="color:var(--muted);font-size:15.2px;margin-bottom:20px">
+        Each failure is charged to the first atomic claim it violates. Values are the unweighted means across the
+        ten systems reported in the paper.
+      </p>
+      <div class="bars" id="barsErr"></div>
+      <p class="note">
+        Net-change aggregation accounts for roughly half of labeled failures. Together with retrieval and counting,
+        record selection and signed-effect aggregation account for about two thirds. Notably, the strongest system has
+        the <i>lowest</i> aggregation-error share and the <i>highest</i> ranking share.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PAPER ================= -->
+<section id="paper" style="border-bottom:none">
+  <div class="wrap">
+    <div class="callout reveal">
+      <h3>EvolveScaler: Code-Driven Information-Evolving Data Synthesis</h3>
+      <p>
+        For training and evaluating large language models on long-context, multi-turn reasoning.
+        Full method, corpus statistics, evaluation of 14 systems, transfer results and error analysis
+        are described in the paper.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="f-grid">
+      <div>
+        <p style="max-width:30em">
+          Code-driven synthesis of long, mutable, information-dense contexts with deterministically verifiable answers.
+        </p>
+      </div>
+      <div>
+        <h5>Authors</h5>
+        <div class="f-auth">
+          Ziliang Zhao<sup>1,2</sup>, Zenan Xu<sup>2</sup>,<br>
+          Shuting Wang<sup>1</sup>, Zhao Wang<sup>1,2</sup>,<br>
+          Bowen Cao<sup>1,3</sup>, Minda Hu<sup>1,3</sup>,<br>
+          Pluto Zhou<sup>2</sup>, Zhicheng Dou<sup>1</sup>
+        </div>
+      </div>
+      <div>
+        <h5>Affiliations</h5>
+        <p><sup>1</sup>Gaoling School of Artificial Intelligence,<br>Renmin University of China</p>
+        <p><sup>2</sup>LLM Department, Hunyuan Team, Tencent</p>
+        <p><sup>3</sup>The Chinese University of Hong Kong</p>
+      </div>
+    </div>
+    <div class="f-bot">
+      <span>&copy; 2026 EvolveScaler. All rights reserved.</span>
+      <span>Figures and statistics on this page are drawn from the paper.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* ---------------- data ---------------- */
+const PIPE = [
+  {h:'Specify — a workflow becomes a typed contract',
+   b:`More than twenty annotators author prototypes from processes where information genuinely accumulates and
+      mutates: clinical follow-up, incident response, code review, returns, play-by-play. Each is written down as a
+      typed transition specification — entities, a clock, event schemas, state variables, invariants, validity rules,
+      noise channels, question operators and answer programs.`,
+   pts:['Informal common sense becomes explicit guards: a refund cannot exceed its payment; stock cannot go negative.',
+        'Every invalid record gets an exclusion rule instead of a judgement call.',
+        'Every question is required to map onto an executable answer function.']},
+  {h:'Synthesize — the model writes the mechanism, not the answer',
+   b:`The specification is handed to a strong LLM, which returns a self-contained simulator: state initialization,
+      event samplers and transitions, invariant checks, a natural-language renderer, and the question/checklist/answer
+      computation. Constraints are not prose the model is asked to remember — they are compiled into assertions
+      around every transition.`,
+   pts:['Accepted only if it runs clean across many random seeds.',
+        'Accepted only if deterministic replay reproduces the identical state.',
+        'Accepted only if its checklist agrees with its own reference answer.']},
+  {h:'Execute & replay — two outputs from one run',
+   b:`Executing the simulator renders a multi-turn dialogue: each user turn contributes a block of events and may ask
+      an intermediate question. Valid records are interleaved with invalidated, out-of-order and state-preserving
+      distractors, while the running state is withheld. Replaying the same machine yields the reference answer.`,
+   pts:['Linguistic variation cannot change answer semantics — the program is the ground truth.',
+        'Counterfactuals come free: drop a subset of events and replay.',
+        'Difficulty is a parameter sweep, not a rewrite.']}
+];
+
+const PRIMS = [
+  ['Entities','typed actors and objects','Travellers (Ann, Bob, Carl, Dan); expense items (flights, hotel, car rental, meals, tickets); categories (transport, lodging, food).'],
+  ['Clock / block','temporal granularity','A trip day or planning round — "Day 2", "round 5" — each carrying a batch of newly posted messages.'],
+  ['Event schemas','admissible updates','Add or revise an expense; cancel a booking and issue a refund; add or remove a traveller; confirm a tentative quote.'],
+  ['State variables','quantities maintained over time','Total trip cost; each traveller\'s paid amount, liability and balance; category-level spending; confirmed deposits and refundable amounts.'],
+  ['Transition constraints','legal state transitions','A refund cannot exceed its payment; only current members share a new expense; allocation shares must sum to the expense; deposits cannot go negative.'],
+  ['Validity rules','records that affect state','Confirmed bookings and receipts count. Cancelled items, fully refunded payments, tentative quotes, duplicated forwards and superseded screenshots do not.'],
+  ['Noise channels','state-preserving distractors','Small talk, stickers, hypotheticals, aliases, duplicated messages, and receipts backfilled out of chronological order.'],
+  ['Difficulty controls','scalable generation parameters','Number of members, blocks and events; invalid-record ratio; backfill distance; entity interleaving; counterfactual depth.'],
+  ['Question operators','requested state views','One of 159 operators: running totals, Top-N spenders, windowed aggregation, invalid-record auditing, comparison, counterfactual removal.'],
+  ['Answer program','executable supervision','Replay the valid events, apply the operator to the resulting ledger, and emit both the reference answer and its independently checkable checklist.']
+];
+
+const METRICS = [['inb','inbound units'],['out','outbound units'],['rel','relocated units'],
+                 ['pend','pending discrepancy'],['exc','exceptions']];
+const CREWS = ['East Dock Receiving','West Rack Put-away','Night Picking','Cold-chain Replenishment'];
+// short forms keep the ledger rows on one line; the log still names crews in full
+const CREW_SHORT = ['East Dock','West Rack','Night Picking','Cold-chain'];
+const TURNS = [
+  {n:'Wave 1', q:'Over all valid receipts, what is the change in inbound units?', a:'+165.', recs:[
+    {id:'W1-R1', s:'WMS posted',        t:'08:10 — East Dock Receiving books in A1-03 bottled water; inbound +120.',            c:0, k:'A1-03', d:{inb:120}},
+    {id:'W1-R2', s:'drill task',        t:'08:18 — Night Picking ships B1-05 jasmine tea; outbound +80.',                       c:2, k:'B1-05', d:{out:80},  bad:'drill task'},
+    {id:'W1-R3', s:'floor re-checked',  t:'08:25 — West Rack Put-away replenishes A2-11 tissue packs; inbound +45, relocated +45.', c:1, k:'A2-11', d:{inb:45, rel:45}},
+    {id:'W1-R4', s:'WMS posted',        t:'08:33 — Night Picking picks A1-03 bottled water; outbound +60.',                     c:2, k:'A1-03', d:{out:60}},
+  ]},
+  {n:'Wave 2', q:'Same question as before.', a:'+255.', recs:[
+    {id:'W2-R1', s:'supervisor confirmed', t:'09:02 — Cold-chain Replenishment books in D4-08 detergent; inbound +90.',         c:3, k:'D4-08', d:{inb:90}},
+    {id:'W2-R2', s:'old count draft',   t:'09:09 — East Dock Receiving logs a count gap on A1-03; pending discrepancy +12.',    c:0, k:'A1-03', d:{pend:12}, bad:'old count draft'},
+    {id:'W2-R3', s:'WMS posted',        t:'09:15 — East Dock Receiving finds a count gap on A2-11; pending +18, exceptions +1.', c:0, k:'A2-11', d:{pend:18, exc:1}},
+    {id:'W2-R4', s:'stock-control confirmed', t:'09:24 — Night Picking ships B1-05 jasmine tea; outbound +75.',                 c:2, k:'B1-05', d:{out:75}},
+    {id:'W2-R5', s:'floor re-checked',  t:'09:31 — West Rack Put-away relocates A1-03; relocated +30.',                         c:1, k:'A1-03', d:{rel:30}},
+  ]},
+  {n:'Wave 3', q:'Total valid exceptions so far?', a:'2.', recs:[
+    {id:'W3-R1', s:'WMS posted',        t:'10:05 — East Dock Receiving clears the A2-11 gap; pending discrepancy −18.',         c:0, k:'A2-11', d:{pend:-18}},
+    {id:'W3-R2', s:'retracted scan',    t:'10:12 — Cold-chain Replenishment ships D4-08; outbound +40.',                        c:3, k:'D4-08', d:{out:40}, bad:'retracted scan'},
+    {id:'W3-R3', s:'supervisor confirmed', t:'10:20 — Night Picking recovers a mis-pick on A1-03; outbound −15, exceptions +1.', c:2, k:'A1-03', d:{out:-15, exc:1}},
+    {id:'W3-R4', s:'WMS posted',        t:'10:28 — Cold-chain Replenishment ships D4-08 detergent; outbound +55.',              c:3, k:'D4-08', d:{out:55}},
+    {id:'W3-R5', s:'floor re-checked',  t:'10:36 — West Rack Put-away replenishes B1-05 jasmine tea; inbound +60, relocated +60.', c:1, k:'B1-05', d:{inb:60, rel:60}},
+  ]},
+];
+const QUESTIONS = [
+  {f:'Ranking / Top-N', c:'#3462AC',
+   q:'Counting only valid records, rank the top-3 crews by inbound units.',
+   a:'<b>East Dock Receiving 120</b>, then West Rack Put-away 105, then Cold-chain Replenishment 90. Night Picking books nothing in.',
+   r:['W1-R1','W1-R3','W2-R1','W3-R5']},
+  {f:'Comparison &amp; leader', c:'#0E9E97',
+   q:'Compare West Rack Put-away and Cold-chain Replenishment on inbound and outbound units.',
+   a:'They split it: West Rack leads inbound <b>105 vs 90</b>; Cold-chain leads outbound <b>55 vs 0</b>. Neither leads both.',
+   r:['W1-R3','W2-R1','W2-R5','W3-R4','W3-R5']},
+  {f:'Profile &amp; summary', c:'#8B55B4',
+   q:'Summarize Night Picking&rsquo;s valid trajectory, and give its latest valid record.',
+   a:'Outbound <b>120</b>, exceptions <b>1</b>, every other metric 0. Latest valid record: <b>W3-R3</b>. Its wave-1 shipment was a drill and never happened.',
+   r:['W1-R2','W1-R4','W2-R4','W3-R3']},
+  {f:'Window &amp; range', c:'#E09B21',
+   q:'Over waves 2&ndash;3 only, what is the net change in outbound units and pending discrepancy?',
+   a:'Outbound <b>+115</b> (+75 −15 +55). Pending discrepancy nets to <b>0</b> — raised by +18 in wave 2, cleared by −18 in wave 3.',
+   r:['W2-R3','W2-R4','W3-R1','W3-R3','W3-R4']},
+  {f:'Audit &amp; exclusion', c:'#3DB54A',
+   q:'Which records are invalid? After excluding them, what is the total outbound?',
+   a:'Invalid: <b>W1-R2</b> (drill), <b>W2-R2</b> (old draft), <b>W3-R2</b> (retracted). Excluding them, outbound totals <b>175</b> — the three invalid records would have inflated it by 120.',
+   r:['W1-R2','W2-R2','W3-R2']},
+  {f:'Counterfactual', c:'#C2547E',
+   q:'Dropping all valid records of Night Picking, what is the remaining outbound?',
+   a:'<b>55</b>. Night Picking contributed +60 +75 −15 = 120 of the 175, so only W3-R4 survives.',
+   r:['W1-R4','W2-R4','W3-R3','W3-R4']},
+  {f:'Hotspot &amp; peak', c:'#5A6B84',
+   q:'Which SKU-location carries the most valid records, and what is its inbound?',
+   a:'<b>A1-03 bottled water</b>, with 4 valid records — one more than A2-11. Its inbound is <b>120</b>, all from a single receipt.',
+   r:['W1-R1','W1-R4','W2-R5','W3-R3']},
+];
+
+const THEMES = [['Professional & tech',32],['Business & finance',21],['Public & education',20],['Games & sports',15],['Everyday & travel',12]];
+const SCALE  = [['Very short',7],['Short',27],['Medium',113],['Long',456],['Very long',1209]];
+const FAMS = [
+  ['Ranking / Top-N',21,'#3462AC','Counting only confirmed records, rank the top-3 accounts by spend — and give the values.'],
+  ['Comparison & leader',18,'#0E9E97','Compare accounts A and B on remaining budget and spend; which has more left?'],
+  ['Hotspot & peak',16,'#3DB54A','Which project has the most valid "budget top-up" records, and its net spend change?'],
+  ['Profile & summary',14,'#8B55B4','Summarize actor X\'s valid trajectory: current metrics and the latest valid record ID.'],
+  ['Window & range',12,'#E09B21','Over batches 1–5 only, what is the net change in pending invoices and remaining budget?'],
+  ['Audit & exclusion',11,'#C2547E','Which records are invalid? After excluding them, what is the valid alert count?'],
+  ['Counterfactual',9,'#5A6B84','Dropping all valid records of account X, what is the remaining valid invoice total?']
+];
+const MODELS = [
+  ['GPT-5.5-xhigh',[[83.8,78.5],[83.8,76.4],[79.5,76.6],[85.5,73.2],[81.2,59.3],[82.7,72.8]]],
+  ['GPT-5.5-high',[[87.2,81.7],[82.9,75.2],[79.5,73.8],[83.8,69.7],[75.2,47.5],[81.7,69.6]]],
+  ['GPT-5.5-medium',[[83.8,77.9],[87.2,75.7],[79.5,74.2],[77.8,62.7],[59.8,37.9],[77.6,65.7]]],
+  ['Gemini-3.1-Pro',[[84.6,74.5],[81.2,67.5],[75.2,59.8],[61.5,42.2],[47.0,27.5],[69.9,54.3]]],
+  ['Hy-3-high',[[84.6,72.1],[88.0,74.4],[78.6,63.6],[73.5,39.7],[34.2,19.8],[71.8,53.9]]],
+  ['DeepSeek-V4-Preview-Pro',[[83.8,66.2],[82.9,62.2],[74.4,52.5],[67.5,40.0],[56.4,29.7],[73.0,50.1]]],
+  ['GLM-5.2',[[86.3,76.6],[82.9,70.6],[75.2,48.7],[45.3,21.5],[26.5,12.5],[63.2,46.0]]],
+  ['Qwen3.5-Plus-Thinking',[[80.3,62.7],[75.2,64.8],[72.6,51.6],[35.0,22.2],[16.2,10.1],[55.9,42.3]]],
+  ['GLM-5.1',[[86.3,74.9],[83.8,68.0],[64.1,38.8],[25.6,13.7],[16.2,9.6],[55.2,41.0]]],
+  ['Hy3-Preview-high',[[86.3,70.3],[80.3,70.4],[68.4,42.2],[26.5,14.4],[10.3,5.1],[54.4,40.5]]],
+  ['Doubao-2.0-Pro-high',[[71.8,59.1],[71.8,63.4],[65.0,49.4],[28.2,16.8],[12.8,9.1],[49.9,39.6]]],
+  ['Doubao-1.8-high',[[76.1,59.0],[75.2,65.6],[52.1,35.0],[17.1,11.5],[12.8,8.4],[46.7,35.9]]],
+  ['Doubao-2.0-Pro-medium',[[75.2,60.3],[71.8,60.7],[37.6,27.5],[16.2,9.4],[9.4,4.8],[42.1,32.5]]],
+  ['Doubao-1.8-medium',[[73.5,60.0],[71.8,61.5],[35.9,21.2],[12.8,7.5],[11.1,6.2],[41.0,31.3]]]
+];
+const TIER_NOTE = [
+  'Everyone looks competent here: avg@5 spans 59.0–81.7. A short trace does not separate systems.',
+  'Still crowded at the top — the second tier barely moves the ranking.',
+  'The field begins to split: the strongest hold near 75 while the weakest have already halved.',
+  'The cliff. Half the field is under 20 avg@5 while the leaders stay above 60.',
+  'Six of 14 systems score below 10. The spread is now 4.8–59.3 — a 12× gap on the same task family.',
+  'Averaged over all five tiers. Even the strongest system fails more than a quarter of sampled responses.'
+];
+const MEDIAN = [['Very short',71.2],['Short',67.8],['Medium',50.5],['Long',21.9],['Very long',11.3]];
+const TRAIN = [['Base model',33.17],['+ 200 examples',35.60],['+ 2,000 examples',37.45],['+ 6,000 examples',38.42]];
+const ERRS = [['Net-change aggregation',51.7,'#3462AC'],['Ranking & tie-breaking',21.5,'#0E9E97'],['Retrieval & counting',18.5,'#3DB54A'],['Comparison verdict',4.0,'#E09B21'],['Invalid-record handling',4.3,'#8B55B4']];
+
+/* ---------------- helpers ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+function bars(host, rows, opt){
+  opt = opt || {};
+  const max = opt.max || Math.max(...rows.map(r => r[1]));
+  host.innerHTML = rows.map(r => {
+    const w = (opt.log ? Math.log10(r[1]+1)/Math.log10(max+1) : r[1]/max) * 100;
+    const c = r[2] || 'linear-gradient(90deg,var(--navy),var(--teal))';
+    const col = c.startsWith('#') ? c : c;
+    return `<div class="bar-row"><div class="bl">${r[0]}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${w.toFixed(1)}%;background:${col}"></div></div>
+      <div class="bv">${opt.fmt ? opt.fmt(r[1]) : r[1]}</div></div>`;
+  }).join('');
+}
+
+/* ---------------- nav scroll-spy ---------------- */
+const secs = $$('section[id], header[id]');
+const navA = $$('.nav-links a');
+addEventListener('scroll', () => {
+  let cur = '';
+  secs.forEach(s => { if (scrollY >= s.offsetTop - 140) cur = s.id; });
+  navA.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + cur));
+}, {passive:true});
+
+/* ---------------- counters ---------------- */
+function count(el){
+  const to = parseFloat(el.dataset.to), dec = +(el.dataset.dec || 0);
+  const t0 = performance.now(), dur = 1300;
+  (function tick(t){
+    const p = Math.min((t - t0) / dur, 1);
+    const e = 1 - Math.pow(1 - p, 3);
+    const v = (p < 1 ? to * e : to).toFixed(dec);
+    el.textContent = v.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    if (p < 1) requestAnimationFrame(tick);
+  })(t0);
+}
+
+/* ---------------- reveal on scroll ---------------- */
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return;
+  e.target.classList.add('in');
+  e.target.querySelectorAll('[data-to]').forEach(count);
+  if (e.target.dataset.to) count(e.target);
+  io.unobserve(e.target);
+}), {threshold:.16});
+$$('.reveal, .stat').forEach(el => io.observe(el));
+
+/* ---------------- pipeline ---------------- */
+function pipe(i){
+  const d = PIPE[i];
+  $('#pipeDetail').innerHTML =
+    `<h3 style="font-size:21px;margin-bottom:11px">${d.h}</h3>
+     <p style="font-size:16px">${d.b}</p>
+     <ul style="margin:16px 0 0;padding-left:20px;font-size:15.4px">
+       ${d.pts.map(p => `<li style="margin-bottom:7px">${p}</li>`).join('')}
+     </ul>`;
+  $$('.step').forEach((s, j) => s.classList.toggle('on', i === j));
+}
+$$('.step').forEach(s => s.onclick = () => pipe(+s.dataset.step));
+pipe(0);
+
+/* ---------------- primitives ---------------- */
+$('#primList').innerHTML = PRIMS.map((p, i) =>
+  `<button class="prim${i ? '' : ' on'}" data-i="${i}"><span class="pn">${i+1}</span>${p[0]}</button>`).join('');
+function prim(i){
+  const p = PRIMS[i];
+  $('#primDetail').innerHTML =
+    `<h3>${p[0]}</h3><div class="spec">${p[1]}</div>
+     <div class="ex-l">Illustrated on a group-trip expense chat</div>
+     <div class="ex">${p[2]}</div>`;
+  $$('.prim').forEach((b, j) => b.classList.toggle('on', i === j));
+}
+$$('.prim').forEach(b => b.onclick = () => prim(+b.dataset.i));
+prim(0);
+
+/* ---------------- replay ---------------- */
+let step = 0, pickedQ = 0;
+const ALL = TURNS.flatMap(t => t.recs);
+
+$('#turns').innerHTML = TURNS.map((t, i) => `
+  <div class="turn" data-t="${i}">
+    <div class="turn-h">${t.n} &middot; user</div>
+    ${t.recs.map(r => `<div class="rec${r.bad ? ' invalid' : ''}" data-id="${r.id}">
+        <span class="id">${r.id}</span>
+        <span><span class="stat-tag">${r.s}</span>${r.t}</span>
+        ${r.bad ? `<span class="flag">${r.bad}</span>` : ''}</div>`).join('')}
+    <div class="qa-line"><i>Q: ${t.q}</i> &nbsp;<b>Assistant:</b> ${t.a}</div>
+  </div>`).join('');
+
+function totals(upto){
+  const st = {inb:0,out:0,rel:0,pend:0,exc:0};
+  const per = CREWS.map(() => ({inb:0,out:0,rel:0,pend:0,exc:0}));
+  TURNS.slice(0, upto).forEach(t => t.recs.forEach(r => {
+    if (r.bad) return;                       // invalid records never touch the ledger
+    for (const k in r.d){ st[k] += r.d[k]; per[r.c][k] += r.d[k]; }
+  }));
+  return {st, per};
+}
+
+function paint(){
+  const {st, per} = totals(step), prev = totals(Math.max(step - 1, 0)).st;
+  $('#vars').innerHTML = METRICS.map(([k, label]) => {
+    const dir = step && st[k] > prev[k] ? 'up' : step && st[k] < prev[k] ? 'down' : 'same';
+    return `<div class="var"><span class="vk">${label}</span>
+      <span class="vv ${dir}">${st[k] > 0 ? '+' : ''}${st[k]}</span></div>`;
+  }).join('');
+  $('#crews').innerHTML = CREWS.map((_, i) => {
+    const v = per[i];
+    const bits = METRICS.filter(([k]) => v[k]).map(([k]) => `${k} ${v[k] > 0 ? '+' : ''}${v[k]}`).join(' · ');
+    return `<div class="crew"><span>${CREW_SHORT[i]}</span><span class="cv">${bits || '—'}</span></div>`;
+  }).join('');
+  const shown = TURNS.slice(0, step).reduce((n, t) => n + t.recs.length, 0);
+  const bad = TURNS.slice(0, step).reduce((n, t) => n + t.recs.filter(r => r.bad).length, 0);
+  $('#logCount').textContent = shown ? `${shown} records · ${bad} invalid` : '';
+  $$('.turn').forEach((t, i) => t.classList.toggle('shown', i < step));
+  $('#bPrev').disabled = step === 0;
+  $('#bNext').disabled = step >= TURNS.length;
+  $('#bNext').textContent = step >= TURNS.length ? 'Replay complete' : (step === 0 ? 'Start \u2192' : 'Next wave \u2192');
+  $('#qbox').classList.toggle('ready', step >= TURNS.length);
+}
+$('#bNext').onclick = () => { if (step < TURNS.length){ step++; paint(); } };
+$('#bPrev').onclick = () => { if (step > 0){ step--; paint(); } };
+
+/* ---- ask the same trace seven ways ---- */
+$('#chips').innerHTML = QUESTIONS.map((q, i) =>
+  `<button class="chip${i ? '' : ' on'}" data-q="${i}" style="--c:${q.c}">${q.f}</button>`).join('');
+function ask(i){
+  pickedQ = i;
+  const q = QUESTIONS[i];
+  $('#qa').innerHTML =
+    `<div class="q-q"><span class="q-lab" style="background:${q.c}">Final question</span> ${q.q}</div>
+     <div class="q-a"><span class="q-lab" style="background:#0C2A57">Code-verified</span> ${q.a}</div>
+     <div class="q-r">Decided by ${q.r.map(x => `<code>${x}</code>`).join(' ')}</div>`;
+  $$('.chip').forEach((c, j) => c.classList.toggle('on', i === j));
+  $$('.rec').forEach(r => r.classList.toggle('lit', q.r.includes(r.dataset.id)));
+}
+$$('.chip').forEach(c => c.onclick = () => ask(+c.dataset.q));
+paint(); ask(0);
+
+/* ---------------- data tabs ---------------- */
+$$('#dataTabs .tab').forEach(t => t.onclick = () => {
+  $$('#dataTabs .tab').forEach(x => x.classList.toggle('on', x === t));
+  $$('[data-panel]').forEach(p => p.classList.toggle('on', p.dataset.panel === t.dataset.p));
+  if (t.dataset.p === 'themes') bars($('#barsThemes'), THEMES, {fmt:v => v + '%'});
+  if (t.dataset.p === 'scale')  bars($('#barsScale'), SCALE, {log:true, fmt:v => v.toLocaleString()});
+});
+bars($('#barsThemes'), THEMES, {fmt:v => v + '%'});
+
+$('#famGrid').innerHTML = FAMS.map(f => `
+  <div class="fam">
+    <div class="fam-top"><h4>${f[0]}</h4><span class="share" style="background:${f[2]}">${f[1]}%</span></div>
+    <div class="q">“${f[3]}”</div>
+  </div>`).join('');
+
+/* ---------------- results ---------------- */
+function evalTable(t){
+  const rows = MODELS.map(m => [m[0], m[1][t][1], m[1][t][0]]).sort((a, b) => b[1] - a[1]);
+  const bestAvg = rows[0][1];
+  const bestPass = Math.max(...rows.map(r => r[2]));
+  $('#evalBody').innerHTML = rows.map(r => {
+    const gap = (r[2] - r[1]).toFixed(1);
+    return `<tr>
+      <td>${r[0]}</td>
+      <td class="score-cell score-avg${r[1] === bestAvg ? ' best' : ''}">
+        <div class="score-track"><div class="score-fill" style="width:${r[1]}%"></div></div>
+        <span class="score-value">${r[1].toFixed(1)}</span>
+      </td>
+      <td class="score-cell score-pass${r[2] === bestPass ? ' best' : ''}">
+        <div class="score-track"><div class="score-fill" style="width:${r[2]}%"></div></div>
+        <span class="score-value">${r[2].toFixed(1)}</span>
+      </td>
+      <td class="gap-cell">+${gap}</td>
+    </tr>`;
+  }).join('');
+  $('#tierNote').textContent = TIER_NOTE[t];
+}
+$$('#tierTabs .tab').forEach(t => t.onclick = () => {
+  $$('#tierTabs .tab').forEach(x => x.classList.toggle('on', x === t));
+  evalTable(+t.dataset.t);
+});
+evalTable(4);
+
+bars($('#barsMedian'), MEDIAN, {max:100, fmt:v => v.toFixed(1)});
+bars($('#barsTrain'), TRAIN, {max:42, fmt:v => v.toFixed(2)});
+bars($('#barsErr'), ERRS, {max:60, fmt:v => v + '%'});
+</script>
+</body>
+</html>
